@@ -1,0 +1,51 @@
+# Laravel / PHP
+vendor/
+composer.lock
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Framework storage
+storage/*.key
+storage/logs/
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/testing/
+storage/framework/views/
+bootstrap/cache/*.php
+!bootstrap/cache/.gitignore
+
+# IDE / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node build assets if present
+node_modules/
+public/hot
+public/storage
+public/build
+public/mix-manifest.json
+
+# Testing & coverage
+coverage/
+.phpunit.result.cache
+
+*.log
+.DS_Store
+.phpactor.json
+/.fleet
+/.nova
+/.phpunit.cache
+/.zed
+/auth.json
+/storage/*.key
+/storage/pail
+/vendor
+Homestead.json
+Homestead.yaml
+Thumbs.db
