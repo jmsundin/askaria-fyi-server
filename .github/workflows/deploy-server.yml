@@ -59,17 +59,18 @@ jobs:
           ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "
             set -euo pipefail
             cd ${REMOTE_PATH}
-            composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --classmap-authoritative
-            php artisan migrate --force
+            /usr/bin/php8.3 /usr/bin/composer install --no-dev --prefer-dist --no-interaction --no-progress
+            /usr/bin/php8.3 /usr/bin/composer dump-autoload -o
+            /usr/bin/php8.3 artisan migrate --force
             # Ensure Laravel runtime directories exist every deploy
             mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache
             chmod -R ug+rwX storage bootstrap/cache || true
-            php artisan config:cache
-            php artisan route:cache
-            [ -d resources/views ] && php artisan view:cache || php artisan view:clear
+            /usr/bin/php8.3 artisan config:cache
+            /usr/bin/php8.3 artisan route:cache
+            [ -d resources/views ] && /usr/bin/php8.3 artisan view:cache || /usr/bin/php8.3 artisan view:clear
           "
 
       - name: Restart application
         if: env.RESTART_CMD != ''
         run: |
-          ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "${RESTART_CMD}"
+          ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "cd ${REMOTE_PATH} && ${RESTART_CMD}"
