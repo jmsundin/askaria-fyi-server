@@ -17,7 +17,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
@@ -25,8 +25,8 @@ jobs:
       SSH_USER: ${{ secrets.SERVER_SSH_USER }}
       SSH_PORT: ${{ secrets.SERVER_SSH_PORT }}
       SSH_KEY:  ${{ secrets.SERVER_SSH_KEY }}
-      REMOTE_PATH: ${{ secrets.SERVER_REMOTE_PATH }} # e.g. /var/www/api
-      RESTART_CMD: ${{ secrets.SERVER_RESTART_CMD }} # e.g. sudo systemctl restart octane
+      REMOTE_PATH: ${{ secrets.SERVER_REMOTE_PATH }}
+      RESTART_CMD: ${{ secrets.SERVER_RESTART_CMD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
