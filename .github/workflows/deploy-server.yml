@@ -61,6 +61,9 @@ jobs:
             cd ${REMOTE_PATH}
             composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --classmap-authoritative
             php artisan migrate --force
+            # Ensure Laravel runtime directories exist every deploy
+            mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache
+            chmod -R ug+rwX storage bootstrap/cache || true
             php artisan config:cache
             php artisan route:cache
             [ -d resources/views ] && php artisan view:cache || php artisan view:clear
