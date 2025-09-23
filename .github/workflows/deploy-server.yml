@@ -1,4 +1,4 @@
-name: Deploy Server
+name: Deploy Laravel Backend
 
 on:
   push:
@@ -9,10 +9,10 @@ on:
       - "config/**"
       - "database/**"
       - "public/**"
-      - "resources/**"
       - "routes/**"
-      - "composer.json"
-      - "composer.lock"
+      - "storage/**"
+      - "artisan"
+      - "composer.*"
   workflow_dispatch:
 
 jobs:
@@ -24,53 +24,49 @@ jobs:
       SSH_HOST: ${{ secrets.SERVER_SSH_HOST }}
       SSH_USER: ${{ secrets.SERVER_SSH_USER }}
       SSH_PORT: ${{ secrets.SERVER_SSH_PORT }}
-      SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-      REMOTE_PATH: /var/www/server
+      SSH_KEY:  ${{ secrets.SERVER_SSH_KEY }}
+      REMOTE_PATH: ${{ secrets.SERVER_REMOTE_PATH }} # e.g. /var/www/api
+      RESTART_CMD: ${{ secrets.SERVER_RESTART_CMD }} # e.g. sudo systemctl restart octane
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node (for Vite asset build)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Build frontend assets (if using Vite)
-        run: |
-          if [ -f package.json ]; then
-            npm ci
-            npm run build
-          fi
-
       - name: Prepare SSH
         run: |
           mkdir -p ~/.ssh
-          printf "%s" "$SSH_KEY" > ~/.ssh/id_rsa
+          echo "$SSH_KEY" | sed 's/\\n/\n/g' | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null || { echo "SSH key validation failed"; exit 1; }
           ssh-keyscan -p ${SSH_PORT:-22} "$SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Ensure remote dir
-        run: ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "mkdir -p ${REMOTE_PATH}"
-
-      - name: Rsync code (excluding vendor, node_modules, storage logs)
+      - name: Ensure remote directory
         run: |
-          rsync -az --delete \
-            --exclude '.git' \
-            --exclude 'node_modules' \
-            --exclude 'vendor' \
-            --exclude 'storage/logs' \
+          ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "mkdir -p ${REMOTE_PATH}"
+
+      - name: Rsync code to server (no vendor/.env/storage)
+        run: |
+          rsync -az \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude "vendor" \
+            --exclude ".env" \
+            --exclude "storage/" \
             -e "ssh -p ${SSH_PORT:-22} -i ~/.ssh/id_rsa" \
             ./ ${SSH_USER}@${SSH_HOST}:${REMOTE_PATH}/
 
-      - name: Install composer deps and optimize
+      - name: Install dependencies and migrate on server
         run: |
-          ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} <<'EOSSH'
-          set -euo pipefail
-          cd ${REMOTE_PATH}
-          composer install --no-dev --prefer-dist --optimize-autoloader
-          php artisan migrate --force
-          php artisan config:cache
-          php artisan route:cache
-          php artisan view:cache
-          EOSSH
+          ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "
+            set -euo pipefail
+            cd ${REMOTE_PATH}
+            composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --classmap-authoritative
+            php artisan migrate --force
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+          "
+
+      - name: Restart application
+        if: env.RESTART_CMD != ''
+        run: |
+          ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "${RESTART_CMD}"
