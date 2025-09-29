@@ -79,8 +79,10 @@ class TwilioProxyHandler
 
             return;
         }
+        if ($this->sendInitialSystemMessage($openai, $session)) {
+            $this->requestInitialResponse($openai, $session);
+        }
         $this->drainPendingTwilioPayloads($server, $twilioFd, $openai, $sessionId);
-        $this->queueInitialGreeting($openai, $session);
 
         Log::info('Connected upstream for Twilio connection', ['fd' => $twilioFd, 'session_id' => $sessionId]);
 
@@ -323,6 +325,17 @@ class TwilioProxyHandler
             case 'session.updated':
                 Log::info('Realtime session updated.', ['session_id' => $sessionId]);
                 break;
+            case 'session.created':
+                Log::info('Realtime session created.', ['session_id' => $sessionId]);
+
+                break;
+            case 'error':
+                Log::error('Realtime error received from OpenAI.', [
+                    'session_id' => $sessionId,
+                    'error' => $data['error'] ?? null,
+                    'payload' => $data,
+                ]);
+                break;
             default:
                 Log::debug('Realtime payload ignored', ['session_id' => $sessionId, 'type' => $data['type']]);
                 break;
@@ -361,33 +374,29 @@ class TwilioProxyHandler
         $server->push($twilioFd, json_encode([
             'event' => 'media',
             'streamSid' => $session->streamSid,
-            'media' => ['payload' => $delta],
+            'media' => ['payload' => $delta, 'track' => 'outbound'],
         ], JSON_THROW_ON_ERROR));
     }
 
-    protected function queueInitialGreeting(HttpClient $client, \App\Services\Twilio\TwilioSession $session): void
+    protected function sendInitialSystemMessage(HttpClient $client, \App\Services\Twilio\TwilioSession $session): bool
     {
-        if ($session->hasGreetedAgent) {
-            return;
+        $instructions = config('services.openai.realtime_instructions', '');
+
+        if ($instructions === '') {
+            Log::warning('Realtime instructions missing while attempting to send system message.', ['session_id' => $session->id]);
+
+            return false;
         }
 
-        $greetingText = config('services.openai.realtime_greeting', 'Hi, this is Aria. How can I help you?');
-
         $payload = [
-            'type' => 'response.create',
-            'response' => [
-                'instructions' => $greetingText,
-                'conversation' => [
-                    'messages' => [
-                        [
-                            'role' => 'assistant',
-                            'content' => [
-                                [
-                                    'type' => 'output_text',
-                                    'text' => $greetingText,
-                                ],
-                            ],
-                        ],
+            'type' => 'conversation.item.create',
+            'item' => [
+                'type' => 'message',
+                'role' => 'system',
+                'content' => [
+                    [
+                        'type' => 'input_text',
+                        'text' => $instructions,
                     ],
                 ],
             ],
@@ -396,13 +405,37 @@ class TwilioProxyHandler
         $encodedPayload = json_encode($payload, JSON_THROW_ON_ERROR);
 
         if ($client->push($encodedPayload) === false) {
-            Log::warning('Failed to push greeting to OpenAI.', ['session_id' => $session->id]);
+            Log::warning('Failed to push initial system message to OpenAI.', ['session_id' => $session->id]);
+            $session->hasGreetedAgent = false;
+
+            return false;
+        }
+
+        Log::info('Queued initial system message with OpenAI.', ['session_id' => $session->id]);
+        $session->hasGreetedAgent = true;
+
+        return true;
+    }
+
+    protected function requestInitialResponse(HttpClient $client, \App\Services\Twilio\TwilioSession $session): void
+    {
+        $payload = [
+            'type' => 'response.create',
+            'response' => [
+                'instructions' => 'Generate an immediate response to the most recent system message.',
+                'modalities' => ['audio', 'text'],
+            ],
+        ];
+
+        $encodedPayload = json_encode($payload, JSON_THROW_ON_ERROR);
+
+        if ($client->push($encodedPayload) === false) {
+            Log::warning('Failed to request initial response from OpenAI.', ['session_id' => $session->id]);
 
             return;
         }
 
-        $session->hasGreetedAgent = true;
-        Log::info('Queued initial greeting with OpenAI.', ['session_id' => $session->id]);
+        Log::info('Requested initial response from OpenAI.', ['session_id' => $session->id]);
     }
 
     protected function handleStartEvent(Server $server, int $twilioFd, \App\Services\Twilio\TwilioSession $session, array $payload): void
@@ -456,6 +489,13 @@ class TwilioProxyHandler
             $this->pendingTwilioPayloads[$twilioFd] = [];
         }
 
+        $decodedPayload = json_decode($payload, true);
+        if (is_array($decodedPayload) && ($decodedPayload['event'] ?? null) === 'media') {
+            Log::debug('Dropping Twilio media frame while upstream initializes.', ['fd' => $twilioFd]);
+
+            return;
+        }
+
         $this->pendingTwilioPayloads[$twilioFd][] = $payload;
     }
 
@@ -472,5 +512,10 @@ class TwilioProxyHandler
         }
 
         unset($this->pendingTwilioPayloads[$twilioFd]);
+    }
+
+    protected function getConnection(int $twilioFd): ?HttpClient
+    {
+        return $this->connections[$twilioFd] ?? null;
     }
 }

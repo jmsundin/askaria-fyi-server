@@ -9,7 +9,7 @@ class RealtimeSessionConfigurator
         $config = config('services.openai');
 
         $instructions = (string) ($config['realtime_instructions'] ?? '');
-        $voice = (string) ($config['realtime_voice'] ?? 'alloy');
+        $voice = (string) ($config['realtime_voice'] ?? 'shimmer');
 
         return [
             'type' => 'session.update',
