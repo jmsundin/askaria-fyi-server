@@ -29,6 +29,13 @@ class TwilioProxyHandler
      */
     protected array $connectionSessions = [];
 
+    /**
+     * Twilio payloads received before the upstream OpenAI client becomes available.
+     *
+     * @var array<int, string[]>
+     */
+    protected array $pendingTwilioPayloads = [];
+
     protected TwilioSessionManager $sessionManager;
 
     public function __construct(
@@ -52,6 +59,7 @@ class TwilioProxyHandler
         $sessionId = $this->resolveSessionId($request);
         $session = $this->sessionManager->getOrCreate($sessionId);
         $this->connectionSessions[$twilioFd] = $sessionId;
+        $this->pendingTwilioPayloads[$twilioFd] = [];
 
         Log::debug('Preparing OpenAI realtime client', ['fd' => $twilioFd, 'session_id' => $sessionId]);
         $openai = $this->clientFactory->create();
@@ -71,6 +79,7 @@ class TwilioProxyHandler
 
             return;
         }
+        $this->drainPendingTwilioPayloads($server, $twilioFd, $openai, $sessionId);
         $this->queueInitialGreeting($openai, $session);
 
         Log::info('Connected upstream for Twilio connection', ['fd' => $twilioFd, 'session_id' => $sessionId]);
@@ -91,7 +100,8 @@ class TwilioProxyHandler
         $openai = $this->connections[$twilioFd] ?? null;
 
         if ($sessionId === null || $openai === null) {
-            Log::warning('Received Twilio frame for unknown connection.', ['fd' => $twilioFd]);
+            $this->queuePendingTwilioPayload($twilioFd, $frame->data);
+            Log::debug('Queued Twilio payload while upstream initializes.', ['fd' => $twilioFd]);
 
             return;
         }
@@ -188,6 +198,8 @@ class TwilioProxyHandler
 
             unset($this->connections[$fd]);
         }
+
+        unset($this->pendingTwilioPayloads[$fd]);
 
         if ($sessionId !== null) {
             $session = $this->sessionManager->find($sessionId);
@@ -436,5 +448,29 @@ class TwilioProxyHandler
         if ($connectionInfo === false || ($connectionInfo['websocket_status'] ?? 0) !== $activeStatus) {
             Log::warning('Twilio websocket not active after start event.', ['session_id' => $session->id]);
         }
+    }
+
+    protected function queuePendingTwilioPayload(int $twilioFd, string $payload): void
+    {
+        if (! isset($this->pendingTwilioPayloads[$twilioFd])) {
+            $this->pendingTwilioPayloads[$twilioFd] = [];
+        }
+
+        $this->pendingTwilioPayloads[$twilioFd][] = $payload;
+    }
+
+    protected function drainPendingTwilioPayloads(Server $server, int $twilioFd, HttpClient $openai, string $sessionId): void
+    {
+        if (empty($this->pendingTwilioPayloads[$twilioFd])) {
+            unset($this->pendingTwilioPayloads[$twilioFd]);
+
+            return;
+        }
+
+        foreach ($this->pendingTwilioPayloads[$twilioFd] as $payload) {
+            $this->handleIncomingTwilioPayload($server, $twilioFd, $payload, $openai, $sessionId);
+        }
+
+        unset($this->pendingTwilioPayloads[$twilioFd]);
     }
 }
