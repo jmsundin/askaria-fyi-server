@@ -2,6 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Services\OpenAI\RealtimeClientFactory;
+use App\Services\OpenAI\RealtimeSessionConfigurator;
+use App\Services\OpenAI\TranscriptProcessor;
+use App\Services\Twilio\TwilioSessionManager;
 use App\WebSocket\TwilioProxyHandler;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -15,7 +19,7 @@ class ServeWebSocket extends Command
      *
      * @var string
      */
-    protected $signature = 'ws:serve {--host=0.0.0.0} {--port=9502} {--path=/stream}';
+    protected $signature = 'ws:serve {--host=0.0.0.0} {--port=9502} {--path=/media-stream}';
 
     /**
      * The console command description.
@@ -28,6 +32,7 @@ class ServeWebSocket extends Command
     {
         if (! extension_loaded('swoole')) {
             $this->error('The Swoole extension is not installed.');
+
             return self::FAILURE;
         }
 
@@ -44,7 +49,12 @@ class ServeWebSocket extends Command
             'open_http2_protocol' => false,
         ]);
 
-        $handler = new TwilioProxyHandler();
+        $handler = new TwilioProxyHandler(
+            app(RealtimeClientFactory::class),
+            app(RealtimeSessionConfigurator::class),
+            app(TranscriptProcessor::class),
+            app(TwilioSessionManager::class),
+        );
 
         $server->on('start', function () use ($host, $port, $path) {
             Log::info('Swoole WebSocket server started', ['host' => $host, 'port' => $port, 'path' => $path]);
@@ -55,6 +65,7 @@ class ServeWebSocket extends Command
             $requestPath = $request->server['request_uri'] ?? '/';
             if ($requestPath !== $path) {
                 $server->disconnect($request->fd, 1008, 'Invalid path');
+
                 return;
             }
             $handler->onOpen($server, $request);
@@ -75,5 +86,3 @@ class ServeWebSocket extends Command
         return self::SUCCESS;
     }
 }
-
-

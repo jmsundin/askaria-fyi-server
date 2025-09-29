@@ -59,15 +59,15 @@ jobs:
           ssh -i ~/.ssh/id_rsa -p ${SSH_PORT:-22} ${SSH_USER}@${SSH_HOST} "
             set -euo pipefail
             cd ${REMOTE_PATH}
-            /usr/bin/php8.3 /usr/bin/composer install --no-dev --prefer-dist --no-interaction --no-progress
-            /usr/bin/php8.3 /usr/bin/composer dump-autoload -o
-            /usr/bin/php8.3 artisan migrate --force
+            /usr/bin/php8.4 /usr/bin/composer install --no-dev --prefer-dist --no-interaction --no-progress
+            /usr/bin/php8.4 /usr/bin/composer dump-autoload -o
+            /usr/bin/php8.4 artisan migrate --force
             # Ensure Laravel runtime directories exist every deploy
             mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache
             chmod -R ug+rwX storage bootstrap/cache || true
-            /usr/bin/php8.3 artisan config:cache
-            /usr/bin/php8.3 artisan route:cache
-            [ -d resources/views ] && /usr/bin/php8.3 artisan view:cache || /usr/bin/php8.3 artisan view:clear
+            /usr/bin/php8.4 artisan config:cache
+            /usr/bin/php8.4 artisan route:cache
+            [ -d resources/views ] && /usr/bin/php8.4 artisan view:cache || /usr/bin/php8.4 artisan view:clear
           "
 
       - name: Restart application
