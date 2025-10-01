@@ -5,6 +5,7 @@ return [
     'allowed_methods' => ['*'],
     'allowed_origins' => [
         'https://askaria.fyi',
+        'https://www.askaria.fyi',
         'http://localhost:5175',
         'http://127.0.0.1:5175',
     ],
