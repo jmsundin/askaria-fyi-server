@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
-use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
@@ -28,7 +28,7 @@ class AuthController extends Controller
 
         $token = JWTAuth::fromUser($user);
 
-        return response()->json([
+        $response = response()->json([
             'token' => $token,
             'user' => [
                 'id' => $user->id,
@@ -36,6 +36,17 @@ class AuthController extends Controller
                 'email' => $user->email,
             ],
         ], 201);
+
+        return $response->withCookie(cookie(
+            name: config('session.cookie'),
+            value: $token,
+            minutes: config('session.lifetime'),
+            path: config('session.path', '/'),
+            domain: config('session.domain'),
+            secure: (bool) config('session.secure'),
+            httpOnly: true,
+            sameSite: 'lax',
+        ));
     }
 
     public function login(Request $request)
@@ -45,14 +56,24 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (! $token = Auth::guard('api')->attempt($credentials)) {
-            return response()->json(['message' => 'Invalid credentials'], 401);
+        try {
+            if (! $token = JWTAuth::attempt($credentials)) {
+                return response()
+                    ->json(['message' => 'Invalid credentials'], 401)
+                    ->withoutCookie(config('session.cookie'));
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()
+                ->json(['message' => 'Unable to process login request'], 500)
+                ->withoutCookie(config('session.cookie'));
         }
 
         /** @var User $user */
         $user = Auth::guard('api')->user();
 
-        return response()->json([
+        $response = response()->json([
             'token' => $token,
             'user' => [
                 'id' => $user->id,
@@ -60,18 +81,29 @@ class AuthController extends Controller
                 'email' => $user->email,
             ],
         ]);
+
+        return $response->withCookie(cookie(
+            name: config('session.cookie'),
+            value: $token,
+            minutes: config('session.lifetime'),
+            path: config('session.path', '/'),
+            domain: config('session.domain'),
+            secure: (bool) config('session.secure'),
+            httpOnly: true,
+            sameSite: 'lax',
+        ));
     }
 
     public function me(Request $request)
     {
         /** @var User $user */
         $user = Auth::guard('api')->user();
+
         return response()->json([
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'agent_profile' => $user->agentProfile,
         ]);
     }
 }
-
-
