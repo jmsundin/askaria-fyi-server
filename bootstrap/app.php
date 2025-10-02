@@ -3,12 +3,20 @@
 use App\Http\Middleware\VerifyInternalApiKey;
 use App\Http\Middleware\VerifyTwilioSignature;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Bootstrap\LoadEnvironmentVariables;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
+    ->booting(function (Application $app): void {
+        if (file_exists(base_path('.env.local'))) {
+            $app->beforeBootstrapping(LoadEnvironmentVariables::class, function (Application $application): void {
+                $application->loadEnvironmentFrom('.env.local');
+            });
+        }
+    })
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',

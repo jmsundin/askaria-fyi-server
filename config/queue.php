@@ -45,7 +45,7 @@ return [
 
         'beanstalkd' => [
             'driver' => 'beanstalkd',
-            'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
+            'host' => env('BEANSTALKD_QUEUE_HOST', '127.0.0.1'),
             'queue' => env('BEANSTALKD_QUEUE', 'default'),
             'retry_after' => (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 90),
             'block_for' => 0,
@@ -86,7 +86,7 @@ return [
     */
 
     'batching' => [
-        'database' => env('DB_CONNECTION', 'sqlite'),
+        'database' => env('QUEUE_DATABASE', env('DB_DATABASE', 'laravel')),
         'table' => 'job_batches',
     ],
 
@@ -105,7 +105,7 @@ return [
 
     'failed' => [
         'driver' => env('QUEUE_FAILED_DRIVER', 'database-uuids'),
-        'database' => env('DB_CONNECTION', 'sqlite'),
+        'database' => env('QUEUE_DATABASE', env('DB_DATABASE', 'laravel')),
         'table' => 'failed_jobs',
     ],
 
