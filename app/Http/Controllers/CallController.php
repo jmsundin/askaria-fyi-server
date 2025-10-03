@@ -7,6 +7,11 @@ use Illuminate\Support\Facades\Config;
 
 class CallController extends Controller
 {
+    public function index(): Response
+    {
+        return response()->noContent();
+    }
+
     public function handleIncomingCall(): Response
     {
         $path = Config::get('services.twilio.media_stream_path', '/media-stream');
