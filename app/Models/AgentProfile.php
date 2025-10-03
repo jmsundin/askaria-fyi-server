@@ -17,6 +17,16 @@ class AgentProfile extends Model
         'user_id',
         'business_phone_number',
         'business_overview',
+        'core_services',
+        'faq',
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'core_services' => 'array',
+        'faq' => 'array',
     ];
 
     public function user(): BelongsTo

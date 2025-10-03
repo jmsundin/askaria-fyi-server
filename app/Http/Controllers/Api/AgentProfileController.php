@@ -8,6 +8,7 @@ use App\Models\AgentProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AgentProfileController extends Controller
 {
@@ -23,6 +24,8 @@ class AgentProfileController extends Controller
                 'business_name' => $user->name,
                 'business_phone_number' => null,
                 'business_overview' => null,
+                'core_services' => [],
+                'faq' => [],
             ]);
         }
 
@@ -30,6 +33,8 @@ class AgentProfileController extends Controller
             'business_name' => $user->name,
             'business_phone_number' => $profile->business_phone_number,
             'business_overview' => $profile->business_overview,
+            'core_services' => $profile->core_services ?? [],
+            'faq' => $profile->faq ?? [],
         ]);
     }
 
@@ -49,13 +54,19 @@ class AgentProfileController extends Controller
             $profile->fill([
                 'business_phone_number' => $validated['business_phone_number'],
                 'business_overview' => $validated['business_overview'],
+                'core_services' => $validated['core_services'],
+                'faq' => $validated['faq'],
             ]);
             $user->agentProfile()->save($profile);
+
+            Log::info('faq', [$profile->faq]);
 
             return response()->json([
                 'business_name' => $user->name,
                 'business_phone_number' => $profile->business_phone_number,
                 'business_overview' => $profile->business_overview,
+                'core_services' => $profile->core_services ?? [],
+                'faq' => $profile->faq ?? [],
             ]);
         });
     }

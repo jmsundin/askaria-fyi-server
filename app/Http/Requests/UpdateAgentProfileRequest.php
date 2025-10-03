@@ -25,6 +25,11 @@ class UpdateAgentProfileRequest extends FormRequest
             'business_name' => ['required', 'string', 'max:255'],
             'business_phone_number' => ['nullable', 'string', 'max:50'],
             'business_overview' => ['required', 'string'],
+            'core_services' => ['nullable', 'array'],
+            'core_services.*' => ['string', 'max:255'],
+            'faq' => ['nullable', 'array'],
+            'faq.*.question' => ['nullable', 'string', 'max:255'],
+            'faq.*.answer' => ['nullable', 'string'],
         ];
     }
 }

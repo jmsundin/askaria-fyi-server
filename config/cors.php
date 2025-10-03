@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'paths' => ['api/*', 'login', 'register', 'agent-profile', 'me', 'internal/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*', 'login', 'register', 'agent-profile', 'agent-profile/*', 'me', 'internal/*', 'sanctum/csrf-cookie'],
     'allowed_methods' => ['*'],
     'allowed_origins' => [
         'https://askaria.fyi',
