@@ -2,10 +2,14 @@
 
 namespace App\WebSocket;
 
+use App\Models\AgentProfile;
+use App\Models\Call;
 use App\Services\OpenAI\RealtimeClientFactory;
 use App\Services\OpenAI\RealtimeSessionConfigurator;
 use App\Services\OpenAI\TranscriptProcessor;
+use App\Services\Twilio\TwilioSession;
 use App\Services\Twilio\TwilioSessionManager;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Swoole\Coroutine\Http\Client as HttpClient;
@@ -36,6 +40,13 @@ class TwilioProxyHandler
      */
     protected array $pendingTwilioPayloads = [];
 
+    /**
+     * Cached map of normalized business phone numbers to user identifiers.
+     *
+     * @var array<string, int>
+     */
+    protected array $businessNumberUserMap = [];
+
     protected TwilioSessionManager $sessionManager;
 
     public function __construct(
@@ -58,6 +69,17 @@ class TwilioProxyHandler
 
         $sessionId = $this->resolveSessionId($request);
         $session = $this->sessionManager->getOrCreate($sessionId);
+
+        $call = Call::query()->firstOrCreate(
+            ['session_id' => $sessionId],
+            [
+                'status' => 'in_progress',
+                'started_at' => now(),
+            ]
+        );
+
+        $session->callId = $call->id;
+        $session->callSid = $call->call_sid;
         $this->connectionSessions[$twilioFd] = $sessionId;
         $this->pendingTwilioPayloads[$twilioFd] = [];
 
@@ -206,8 +228,12 @@ class TwilioProxyHandler
         if ($sessionId !== null) {
             $session = $this->sessionManager->find($sessionId);
 
-            if ($session !== null && $session->transcript !== '') {
-                $this->transcriptProcessor->processAndSendTranscript($session->transcript, $sessionId);
+            if ($session !== null) {
+                if ($session->transcript !== '') {
+                    $this->transcriptProcessor->processAndSendTranscript($session->transcript, $sessionId);
+                }
+
+                $this->finalizeCall($session);
             }
 
             $this->sessionManager->remove($sessionId);
@@ -308,13 +334,15 @@ class TwilioProxyHandler
         switch ($data['type']) {
             case 'conversation.item.input_audio_transcription.completed':
                 $message = trim((string) ($data['transcript'] ?? ''));
-                $session->appendTranscript('User', $message);
+                $session->appendTranscript('caller', $message);
+                $this->persistLatestTranscriptMessage($session);
                 Log::info('User transcript captured.', ['session_id' => $sessionId, 'transcript' => $message]);
                 break;
             case 'response.done':
                 $message = $this->extractAgentTranscript($data);
                 if ($message !== null) {
-                    $session->appendTranscript('Agent', $message);
+                    $session->appendTranscript('agent', $message);
+                    $this->persistLatestTranscriptMessage($session);
                     Log::info('Agent transcript captured.', ['session_id' => $sessionId, 'transcript' => $message]);
                 }
                 break;
@@ -376,6 +404,115 @@ class TwilioProxyHandler
             'streamSid' => $session->streamSid,
             'media' => ['payload' => $delta, 'track' => 'outbound'],
         ], JSON_THROW_ON_ERROR));
+    }
+
+    protected function persistLatestTranscriptMessage(TwilioSession $session): void
+    {
+        if ($session->callId === null || $session->messages === []) {
+            return;
+        }
+
+        $latestMessage = end($session->messages);
+        if (! is_array($latestMessage)) {
+            return;
+        }
+
+        $call = Call::query()->find($session->callId);
+        if ($call === null) {
+            return;
+        }
+
+        $messages = $call->transcript_messages ?? [];
+        foreach ($messages as $existingMessage) {
+            if (($existingMessage['id'] ?? null) === ($latestMessage['id'] ?? null)) {
+                return;
+            }
+        }
+
+        $messages[] = $latestMessage;
+        $call->transcript_messages = $messages;
+        $call->save();
+    }
+
+    protected function finalizeCall(TwilioSession $session): void
+    {
+        if ($session->callId === null) {
+            return;
+        }
+
+        $call = Call::query()->find($session->callId);
+        if ($call === null) {
+            return;
+        }
+
+        $endedAt = CarbonImmutable::now();
+        $session->endedAt = $endedAt;
+
+        $attributes = [
+            'status' => 'completed',
+            'ended_at' => $endedAt,
+        ];
+
+        if ($session->startedAt === null && $call->started_at !== null) {
+            $session->startedAt = CarbonImmutable::instance($call->started_at);
+        }
+
+        if ($session->startedAt !== null) {
+            $attributes['duration_seconds'] = max(0, $endedAt->diffInSeconds($session->startedAt));
+        }
+
+        if ($session->callSid !== null && $call->call_sid === null) {
+            $attributes['call_sid'] = $session->callSid;
+        }
+
+        if ($session->fromNumber !== null && $call->from_number === null) {
+            $attributes['from_number'] = $session->fromNumber;
+        }
+
+        if ($session->toNumber !== null && $call->to_number === null) {
+            $attributes['to_number'] = $session->toNumber;
+        }
+
+        if ($session->forwardedFrom !== null && $call->forwarded_from === null) {
+            $attributes['forwarded_from'] = $session->forwardedFrom;
+        }
+
+        if ($session->callerName !== null && $call->caller_name === null) {
+            $attributes['caller_name'] = $session->callerName;
+        }
+
+        if ($session->userId !== null && $call->user_id === null) {
+            $attributes['user_id'] = $session->userId;
+        }
+
+        $isDirty = false;
+
+        foreach ($attributes as $key => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            $current = $call->getAttribute($key);
+
+            if ($current === null || $current === '') {
+                $call->setAttribute($key, $value);
+                $isDirty = true;
+            }
+        }
+
+        if ($session->messages !== []) {
+            $call->transcript_messages = $session->messages;
+            $isDirty = true;
+        }
+
+        if ($session->transcript !== '') {
+            $call->transcript_text = $session->transcript;
+            $isDirty = true;
+        }
+
+        if ($isDirty) {
+            $call->save();
+        }
     }
 
     protected function sendInitialSystemMessage(HttpClient $client, \App\Services\Twilio\TwilioSession $session): bool
@@ -466,6 +603,44 @@ class TwilioProxyHandler
                 'session_id' => $session->id,
                 'custom_parameters' => $start['customParameters'],
             ]);
+            $rawFrom = $start['customParameters']['from'] ?? null;
+            $rawTo = $start['customParameters']['to'] ?? null;
+            $rawForwarded = $start['customParameters']['forwarded_from'] ?? null;
+            $rawCallerName = $start['customParameters']['caller_name'] ?? null;
+
+            $session->fromNumber = $this->normalizePhoneNumber(is_string($rawFrom) ? $rawFrom : null);
+            $session->toNumber = $this->normalizePhoneNumber(is_string($rawTo) ? $rawTo : null);
+            $session->forwardedFrom = $this->normalizePhoneNumber(is_string($rawForwarded) ? $rawForwarded : null);
+            $session->callerName = is_string($rawCallerName) ? trim($rawCallerName) : null;
+
+            $attributes = [];
+
+            if ($session->fromNumber !== null) {
+                $attributes['from_number'] = $session->fromNumber;
+            }
+
+            if ($session->toNumber !== null) {
+                $attributes['to_number'] = $session->toNumber;
+            }
+
+            if ($session->forwardedFrom !== null) {
+                $attributes['forwarded_from'] = $session->forwardedFrom;
+            }
+
+            if ($session->callerName !== null) {
+                $attributes['caller_name'] = $session->callerName;
+            }
+
+            if ($session->toNumber !== null) {
+                $session->userId = $this->resolveUserIdForBusinessNumber($session->toNumber);
+                if ($session->userId !== null) {
+                    $attributes['user_id'] = $session->userId;
+                }
+            }
+
+            if ($attributes !== []) {
+                $this->updateCallRecord($session, $attributes);
+            }
         }
 
         if (isset($start['callSid']) && is_string($start['callSid']) && $start['callSid'] !== '') {
@@ -473,6 +648,8 @@ class TwilioProxyHandler
                 'session_id' => $session->id,
                 'call_sid' => $start['callSid'],
             ]);
+            $session->callSid = $start['callSid'];
+            $this->updateCallRecord($session, ['call_sid' => $session->callSid]);
         }
 
         $connectionInfo = $server->connection_info($twilioFd);
@@ -517,5 +694,95 @@ class TwilioProxyHandler
     protected function getConnection(int $twilioFd): ?HttpClient
     {
         return $this->connections[$twilioFd] ?? null;
+    }
+
+    protected function updateCallRecord(TwilioSession $session, array $attributes): void
+    {
+        if ($session->callId !== null) {
+            $call = Call::query()->find($session->callId);
+        } elseif ($session->callSid !== null) {
+            $call = Call::query()->firstOrCreate(['call_sid' => $session->callSid], [
+                'status' => 'in_progress',
+                'started_at' => CarbonImmutable::now(),
+            ]);
+            $session->callId = $call->id;
+        } else {
+            return;
+        }
+
+        if ($call === null) {
+            return;
+        }
+
+        $isDirty = false;
+
+        foreach ($attributes as $key => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            $current = $call->getAttribute($key);
+
+            if ($current === null || $current === '') {
+                $call->setAttribute($key, $value);
+                $isDirty = true;
+            }
+        }
+
+        if ($isDirty) {
+            $call->save();
+        }
+    }
+
+    protected function normalizePhoneNumber(?string $number): ?string
+    {
+        if ($number === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $number);
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '1') && strlen($digits) === 11) {
+            return '+'.$digits;
+        }
+
+        if (strlen($digits) === 10) {
+            return '+1'.$digits;
+        }
+
+        return '+'.$digits;
+    }
+
+    protected function resolveUserIdForBusinessNumber(?string $number): ?int
+    {
+        $normalized = $this->normalizePhoneNumber($number);
+        if ($normalized === null) {
+            return null;
+        }
+
+        $this->loadBusinessNumberUserMap();
+
+        return $this->businessNumberUserMap[$normalized] ?? null;
+    }
+
+    protected function loadBusinessNumberUserMap(): void
+    {
+        if ($this->businessNumberUserMap !== []) {
+            return;
+        }
+
+        AgentProfile::query()
+            ->whereNotNull('business_phone_number')
+            ->get(['business_phone_number', 'user_id'])
+            ->each(function (AgentProfile $profile): void {
+                $normalized = $this->normalizePhoneNumber($profile->business_phone_number);
+
+                if ($normalized !== null && ! isset($this->businessNumberUserMap[$normalized])) {
+                    $this->businessNumberUserMap[$normalized] = $profile->user_id;
+                }
+            });
     }
 }

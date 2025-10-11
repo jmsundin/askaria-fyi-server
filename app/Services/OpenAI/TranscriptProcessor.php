@@ -2,6 +2,7 @@
 
 namespace App\Services\OpenAI;
 
+use App\Models\Call;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -47,6 +48,18 @@ class TranscriptProcessor
         $parsed = $this->extractJsonPayload($response->json(), $sessionId);
         if ($parsed === null) {
             return;
+        }
+
+        if ($sessionId !== null) {
+            $call = Call::query()
+                ->where('session_id', $sessionId)
+                ->first();
+
+            if ($call !== null) {
+                $call->summary = $parsed;
+                $call->transcript_text = $transcript;
+                $call->save();
+            }
         }
 
         $webhookResponse = Http::acceptJson()
