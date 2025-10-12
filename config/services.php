@@ -24,7 +24,7 @@ return [
         'chat_model' => env('OPENAI_CHAT_MODEL', 'gpt-4o-2024-08-06'),
         'realtime_voice' => env('OPENAI_REALTIME_VOICE', 'shimmer'),
         'realtime_greeting' => env('OPENAI_REALTIME_GREETING', 'Hi, this is Aria. How can I help you?'),
-        'realtime_instructions' => env('OPENAI_REALTIME_INSTRUCTIONS', "You are an AI receptionist called Aria. Your job is to politely engage with the client and obtain their name, availability, and schedule a call to talk details. Ask one question at a time. Be short. Do not ask for other contact information, and do not check availability, assume we are free. Be careful with the user's name. If you are not sure, please ask to clarify. Ensure the conversation remains friendly and professional, and guide the user to provide these details naturally. If necessary, ask follow-up questions to gather the required information."),
+        'realtime_instructions' => env('OPENAI_REALTIME_INSTRUCTIONS', "You are an AI receptionist called Aria. Your job is to politely gather the caller's full name, callback phone number, reason for calling, and the best time for the business owner to return the call. Ask one focused question at a time, keep responses concise, and confirm unclear details. Once all four items are collected, let the caller know the owner will follow up. Stay friendly and professional."),
     ],
 
     'twilio' => [

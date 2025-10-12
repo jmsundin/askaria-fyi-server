@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
+use App\Models\UserCallLayout;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -67,5 +68,10 @@ class User extends Authenticatable implements JWTSubject
     public function calls(): HasMany
     {
         return $this->hasMany(Call::class);
+    }
+
+    public function callLayout(): HasOne
+    {
+        return $this->hasOne(UserCallLayout::class);
     }
 }

@@ -89,7 +89,7 @@ class TranscriptProcessor
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => 'Extract customer details: name, availability, and any special notes from the transcript (you can add the customer\'s problem to the special notes). Return customer\'s availability as a date in ISO 8601 format. Today\'s date is '.$today,
+                    'content' => 'Extract customer details from the transcript: customerName, customerPhone (E.164 format if possible), callReason, and callbackTime. callbackTime must be an ISO 8601 date-time. Derive customerPhone from any spoken or provided digits. Summarize the main reason succinctly. Today\'s date is '.$today,
                 ],
                 [
                     'role' => 'user',
@@ -104,10 +104,11 @@ class TranscriptProcessor
                         'type' => 'object',
                         'properties' => [
                             'customerName' => ['type' => 'string'],
-                            'customerAvailability' => ['type' => 'string'],
-                            'specialNotes' => ['type' => 'string'],
+                            'customerPhone' => ['type' => 'string'],
+                            'callReason' => ['type' => 'string'],
+                            'callbackTime' => ['type' => 'string'],
                         ],
-                        'required' => ['customerName', 'customerAvailability', 'specialNotes'],
+                        'required' => ['customerName', 'customerPhone', 'callReason', 'callbackTime'],
                     ],
                 ],
             ],

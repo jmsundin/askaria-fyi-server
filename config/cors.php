@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'paths' => ['api/*', 'login', 'register', 'agent-profile', 'agent-profile/*', 'me', 'internal/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*', 'calls', 'calls/*', 'call-layout', 'login', 'register', 'agent-profile', 'agent-profile/*', 'me', 'internal/*', 'sanctum/csrf-cookie'],
     'allowed_methods' => ['*'],
     'allowed_origins' => [
         'https://askaria.fyi',
@@ -20,6 +20,6 @@ return [
         'X-XSRF-TOKEN',
     ],
     'exposed_headers' => ['Authorization'],
-    'max_age' => 0,
+    'max_age' => 3600,
     'supports_credentials' => true,
 ];

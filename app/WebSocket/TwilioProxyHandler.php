@@ -4,9 +4,12 @@ namespace App\WebSocket;
 
 use App\Models\AgentProfile;
 use App\Models\Call;
+use App\Support\PhoneNumber;
+use App\Support\PhoneNumber;
 use App\Services\OpenAI\RealtimeClientFactory;
 use App\Services\OpenAI\RealtimeSessionConfigurator;
 use App\Services\OpenAI\TranscriptProcessor;
+use App\Services\Recording\TwilioAudioRecorder;
 use App\Services\Twilio\TwilioSession;
 use App\Services\Twilio\TwilioSessionManager;
 use Carbon\CarbonImmutable;
@@ -53,6 +56,7 @@ class TwilioProxyHandler
         protected RealtimeClientFactory $clientFactory,
         protected RealtimeSessionConfigurator $sessionConfigurator,
         protected TranscriptProcessor $transcriptProcessor,
+        protected TwilioAudioRecorder $audioRecorder,
         ?TwilioSessionManager $sessionManager = null,
     ) {
         $this->sessionManager = $sessionManager ?? new TwilioSessionManager;
@@ -82,6 +86,8 @@ class TwilioProxyHandler
         $session->callSid = $call->call_sid;
         $this->connectionSessions[$twilioFd] = $sessionId;
         $this->pendingTwilioPayloads[$twilioFd] = [];
+
+        $this->audioRecorder->start($sessionId);
 
         Log::debug('Preparing OpenAI realtime client', ['fd' => $twilioFd, 'session_id' => $sessionId]);
         $openai = $this->clientFactory->create();
@@ -234,6 +240,19 @@ class TwilioProxyHandler
                 }
 
                 $this->finalizeCall($session);
+
+                $call = $session->callId !== null ? Call::query()->find($session->callId) : null;
+
+                if ($call !== null) {
+                    $recordingUrl = $this->audioRecorder->finalize($sessionId, $call);
+
+                    if ($recordingUrl !== null) {
+                        $call->recording_url = $recordingUrl;
+                        $call->save();
+                    }
+                } else {
+                    $this->audioRecorder->discard($sessionId);
+                }
             }
 
             $this->sessionManager->remove($sessionId);
@@ -289,6 +308,11 @@ class TwilioProxyHandler
         if ($event === 'media') {
             Log::debug('Received Twilio media frame', ['session_id' => $sessionId]);
             $this->forwardAudioToOpenAi($openai, $data);
+
+            $encoded = $data['media']['payload'] ?? null;
+            if (is_string($encoded) && $encoded !== '') {
+                $this->audioRecorder->append($sessionId, $encoded);
+            }
 
             return;
         }
@@ -561,6 +585,7 @@ class TwilioProxyHandler
             'response' => [
                 'instructions' => 'Generate an immediate response to the most recent system message.',
                 'modalities' => ['audio', 'text'],
+                'conversation' => 'auto',
             ],
         ];
 
@@ -608,9 +633,9 @@ class TwilioProxyHandler
             $rawForwarded = $start['customParameters']['forwarded_from'] ?? null;
             $rawCallerName = $start['customParameters']['caller_name'] ?? null;
 
-            $session->fromNumber = $this->normalizePhoneNumber(is_string($rawFrom) ? $rawFrom : null);
-            $session->toNumber = $this->normalizePhoneNumber(is_string($rawTo) ? $rawTo : null);
-            $session->forwardedFrom = $this->normalizePhoneNumber(is_string($rawForwarded) ? $rawForwarded : null);
+            $session->fromNumber = PhoneNumber::normalize(is_string($rawFrom) ? $rawFrom : null);
+            $session->toNumber = PhoneNumber::normalize(is_string($rawTo) ? $rawTo : null);
+            $session->forwardedFrom = PhoneNumber::normalize(is_string($rawForwarded) ? $rawForwarded : null);
             $session->callerName = is_string($rawCallerName) ? trim($rawCallerName) : null;
 
             $attributes = [];
@@ -758,7 +783,7 @@ class TwilioProxyHandler
 
     protected function resolveUserIdForBusinessNumber(?string $number): ?int
     {
-        $normalized = $this->normalizePhoneNumber($number);
+        $normalized = PhoneNumber::normalize($number);
         if ($normalized === null) {
             return null;
         }
@@ -778,7 +803,7 @@ class TwilioProxyHandler
             ->whereNotNull('business_phone_number')
             ->get(['business_phone_number', 'user_id'])
             ->each(function (AgentProfile $profile): void {
-                $normalized = $this->normalizePhoneNumber($profile->business_phone_number);
+                $normalized = PhoneNumber::normalize($profile->business_phone_number);
 
                 if ($normalized !== null && ! isset($this->businessNumberUserMap[$normalized])) {
                     $this->businessNumberUserMap[$normalized] = $profile->user_id;

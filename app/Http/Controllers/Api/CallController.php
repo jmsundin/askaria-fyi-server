@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\CallCollection;
 use App\Http\Resources\CallResource;
 use App\Models\Call;
+use App\Support\PhoneNumber;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -26,14 +27,19 @@ class CallController extends Controller
             'search' => ['nullable', 'string', 'max:180'],
             'status' => ['nullable', 'in:in_progress,completed,archived'],
             'cursor' => ['nullable', 'string'],
+            'to_number' => ['nullable', 'string', 'max:32'],
         ]);
 
         $user = $request->user();
+        $businessNumber = PhoneNumber::normalize(optional($user->agentProfile)->business_phone_number);
 
         $query = Call::query()
-            ->where(function (Builder $builder) use ($user) {
-                $builder->whereNull('user_id')
-                    ->orWhere('user_id', $user->getAuthIdentifier());
+            ->where(function (Builder $builder) use ($user, $businessNumber) {
+                $builder->where('user_id', $user->getAuthIdentifier());
+
+                if ($businessNumber !== null) {
+                    $builder->orWhere('to_number', $businessNumber);
+                }
             })
             ->orderByDesc('started_at')
             ->orderByDesc('id');
@@ -64,6 +70,14 @@ class CallController extends Controller
                     ->orWhereRaw('LOWER(from_number) LIKE ?', [$term])
                     ->orWhereRaw('LOWER(to_number) LIKE ?', [$term]);
             });
+        }
+
+        if (! empty($validated['to_number'])) {
+            $requestedNumber = PhoneNumber::normalize($validated['to_number']);
+
+            if ($requestedNumber !== null) {
+                $query->where('to_number', $requestedNumber);
+            }
         }
 
         $perPage = (int) ($validated['limit'] ?? 25);

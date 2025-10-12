@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Services\OpenAI\RealtimeClientFactory;
 use App\Services\OpenAI\RealtimeSessionConfigurator;
 use App\Services\OpenAI\TranscriptProcessor;
+use App\Services\Recording\TwilioAudioRecorder;
 use App\Services\Twilio\TwilioSessionManager;
 use App\WebSocket\TwilioProxyHandler;
 use Illuminate\Console\Command;
@@ -53,6 +54,7 @@ class ServeWebSocket extends Command
             app(RealtimeClientFactory::class),
             app(RealtimeSessionConfigurator::class),
             app(TranscriptProcessor::class),
+            app(TwilioAudioRecorder::class),
             app(TwilioSessionManager::class),
         );
 

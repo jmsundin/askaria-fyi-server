@@ -21,10 +21,20 @@ class CallController extends Controller
             ? rtrim($host, '/').$path
             : 'wss://'.request()->getHost().$path;
 
+        $businessNumber = request()->input('To');
+        $streamElement = '<Stream url="'.$streamUrl.'" />';
+
+        if (is_string($businessNumber) && $businessNumber !== '') {
+            $encodedBusinessNumber = htmlspecialchars($businessNumber, ENT_QUOTES | ENT_XML1, 'UTF-8');
+            $streamElement = '<Stream url="'.$streamUrl.'">'
+                .'<Parameter name="to" value="'.$encodedBusinessNumber.'" />'
+                .'</Stream>';
+        }
+
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'
             .'<Response>'
             .'<Connect>'
-            .'<Stream url="'.$streamUrl.'" />'
+            .$streamElement
             .'</Connect>'
             .'</Response>';
 
