@@ -5,7 +5,6 @@ namespace App\WebSocket;
 use App\Models\AgentProfile;
 use App\Models\Call;
 use App\Support\PhoneNumber;
-use App\Support\PhoneNumber;
 use App\Services\OpenAI\RealtimeClientFactory;
 use App\Services\OpenAI\RealtimeSessionConfigurator;
 use App\Services\OpenAI\TranscriptProcessor;

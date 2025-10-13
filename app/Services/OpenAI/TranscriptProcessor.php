@@ -89,7 +89,16 @@ class TranscriptProcessor
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => 'Extract customer details from the transcript: customerName, customerPhone (E.164 format if possible), callReason, and callbackTime. callbackTime must be an ISO 8601 date-time. Derive customerPhone from any spoken or provided digits. Summarize the main reason succinctly. Today\'s date is '.$today,
+                    'content' => 'Extract detailed customer information from the call transcript. Pay special attention to:
+
+- callerName: The caller\'s FULL NAME (first and last name). If only first or last is provided, include what you have. This is critical for personalization.
+- callbackPhone: The callback phone number in E.164 format if possible (e.g., +12345678900). Extract from spoken or provided digits.
+- reason: A clear, concise summary (1-2 sentences) of WHY they called. Be specific - include what product/service they\'re asking about, what they need, or what issue they have.
+- callbackTime: When they want to be called back as an ISO 8601 date-time. If they said "afternoon", "morning", or a time range, convert it to a specific datetime. Today\'s date is '.$today.'
+- notes: Any additional important context, special requests, account numbers mentioned, urgency indicators, or details that would help the business owner prepare for the callback.
+- urgency: Rate the urgency as "high", "medium", or "low" based on the caller\'s tone and situation.
+
+Be thorough - missing information could mean a poor callback experience.',
                 ],
                 [
                     'role' => 'user',
@@ -103,12 +112,34 @@ class TranscriptProcessor
                     'schema' => [
                         'type' => 'object',
                         'properties' => [
-                            'customerName' => ['type' => 'string'],
-                            'customerPhone' => ['type' => 'string'],
-                            'callReason' => ['type' => 'string'],
-                            'callbackTime' => ['type' => 'string'],
+                            'callerName' => [
+                                'type' => 'string',
+                                'description' => 'Full name of the caller (first and last name)',
+                            ],
+                            'callbackPhone' => [
+                                'type' => 'string',
+                                'description' => 'Callback phone number in E.164 format',
+                            ],
+                            'reason' => [
+                                'type' => 'string',
+                                'description' => 'Clear, specific reason for the call',
+                            ],
+                            'callbackTime' => [
+                                'type' => 'string',
+                                'description' => 'ISO 8601 datetime for callback',
+                            ],
+                            'notes' => [
+                                'type' => 'string',
+                                'description' => 'Additional context or important details',
+                            ],
+                            'urgency' => [
+                                'type' => 'string',
+                                'enum' => ['high', 'medium', 'low'],
+                                'description' => 'Urgency level of the callback',
+                            ],
                         ],
-                        'required' => ['customerName', 'customerPhone', 'callReason', 'callbackTime'],
+                        'required' => ['callerName', 'callbackPhone', 'reason', 'callbackTime', 'notes', 'urgency'],
+                        'additionalProperties' => false,
                     ],
                 ],
             ],
