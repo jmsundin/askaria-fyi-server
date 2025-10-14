@@ -416,6 +416,10 @@ class TwilioProxyHandler
             return;
         }
 
+        if ($delta !== '') {
+            $this->audioRecorder->append($session->id, $delta);
+        }
+
         if ($session->streamSid === null) {
             Log::warning('Cannot send audio delta without stream SID.', ['session_id' => $session->id]);
 
